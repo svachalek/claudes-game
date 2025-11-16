@@ -5,23 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Platform Climber</title>
     <style>
-        body {
+        html, body {
             margin: 0;
             padding: 0;
+            height: 100%;
+            overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
             background: #1a1a2e;
-            font-family: Arial, sans-serif;
         }
         #game-container {
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            height: 100%;
+        }
+        button:disabled {
+            cursor: not-allowed;
+            background-color: #555;
+            border-color: #555;
+            color: #888;
         }
     </style>
 </head>
 <body>
-    <div id="game-container"></div>
+        <div id="difficulty-selector" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; color: white; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px; text-align: center;">
+            <h2 style="margin-bottom: 20px;">Select Difficulty</h2>
+            <button id="easy-btn" style="font-size: 18px; padding: 10px 20px; margin: 5px; cursor: pointer; border: 2px solid #4CAF50; background-color: #4CAF50; color: white; border-radius: 5px;">Easy</button>
+            <button id="normal-btn" style="font-size: 18px; padding: 10px 20px; margin: 5px; cursor: pointer; border: 2px solid #ff9800; background-color: #ff9800; color: white; border-radius: 5px;">Normal</button>
+            <button id="hard-btn" style="font-size: 18px; padding: 10px 20px; margin: 5px; cursor: pointer; border: 2px solid #f44336; background-color: #f44336; color: white; border-radius: 5px;">Hard</button>
+            <button id="impossible-btn" style="font-size: 18px; padding: 10px 20px; margin: 5px; cursor: pointer; border: 2px solid #444; background-color: #222; color: white; border-radius: 5px;">Impossible</button>
+        </div>
+        <div id="game-container"></div>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.js"></script>
     <script src="game.js"></script>
 </body>

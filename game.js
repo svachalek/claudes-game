@@ -1,6 +1,55 @@
+class MenuScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'MenuScene' });
+    }
+
+    create() {
+        const difficultySelector = document.getElementById('difficulty-selector');
+        difficultySelector.style.display = 'block';
+
+        const easyBtn = document.getElementById('easy-btn');
+        const normalBtn = document.getElementById('normal-btn');
+        const hardBtn = document.getElementById('hard-btn');
+        const impossibleBtn = document.getElementById('impossible-btn');
+
+        const unlockedNormal = localStorage.getItem('normalUnlocked');
+        const unlockedHard = localStorage.getItem('hardUnlocked');
+        const unlockedImpossible = localStorage.getItem('impossibleUnlocked');
+
+        normalBtn.disabled = !unlockedNormal;
+        hardBtn.disabled = !unlockedHard;
+        impossibleBtn.disabled = !unlockedImpossible;
+
+        easyBtn.addEventListener('click', () => {
+            this.scene.start('GameScene', { difficulty: 'easy' });
+            difficultySelector.style.display = 'none';
+        });
+
+        normalBtn.addEventListener('click', () => {
+            this.scene.start('GameScene', { difficulty: 'normal' });
+            difficultySelector.style.display = 'none';
+        });
+
+        hardBtn.addEventListener('click', () => {
+            this.scene.start('GameScene', { difficulty: 'hard' });
+            difficultySelector.style.display = 'none';
+        });
+
+        impossibleBtn.addEventListener('click', () => {
+            this.scene.start('GameScene', { difficulty: 'impossible' });
+            difficultySelector.style.display = 'none';
+        });
+    }
+}
+
+
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
+    }
+
+    init(data) {
+        this.difficulty = data.difficulty || 'normal';
     }
 
     preload() {
@@ -11,7 +60,6 @@ class GameScene extends Phaser.Scene {
         // Game state
         this.score = 0;
         this.coinsCollected = 0;
-        this.highestPlatform = 600;
         this.gameOver = false;
         this.jumpCount = 0;
         this.flameEmitter = null;
@@ -45,6 +93,15 @@ class GameScene extends Phaser.Scene {
             allowGravity: false
         });
 
+        // Moving platform group
+        this.movingPlatforms = this.physics.add.group({
+            allowGravity: false,
+            immovable: true
+        });
+
+        // Bounce pad group
+        this.bouncePads = this.physics.add.staticGroup();
+
         // Create flame texture
         if (!this.textures.exists('flame')) {
             const graphics = this.add.graphics();
@@ -76,15 +133,23 @@ class GameScene extends Phaser.Scene {
         // Create player
         this.createPlayer();
 
+        this.highestPlatform = this.player.y;
+
         // Physics collision
         this.physics.add.collider(this.player, this.platforms);
+        this.physics.add.collider(this.player, this.bouncePads, this.hitBouncePad, null, this);
+        this.physics.add.collider(this.player, this.movingPlatforms, (player, platform) => {
+            if (player.body.touching.down && platform.body.touching.up) {
+                player.x += platform.body.velocity.x * (this.game.loop.delta / 1000);
+            }
+        });
         this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
         this.physics.add.collider(this.player, this.spikes, this.hitSpike, null, this);
 
         // Camera setup
-        this.cameras.main.setBounds(0, -9400, 800, 10000);
+        this.cameras.main.setBounds(0, -9400, this.scale.width, 10000);
         this.cameras.main.startFollow(this.player);
-        this.cameras.main.setDeadzone(800, 200);
+        this.cameras.main.setDeadzone(this.scale.width, 200);
 
         // Controls
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -143,6 +208,37 @@ class GameScene extends Phaser.Scene {
 
         // Restart key
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+
+        // Cheat code input
+        this.cheatCode = '';
+        this.input.keyboard.on('keydown', event => {
+            if (event.key >= '0' && event.key <= '9') {
+                this.cheatCode += event.key;
+            } else if (event.key === 'Enter') {
+                this.applyCheatCode();
+                this.cheatCode = '';
+            }
+        });
+
+        this.scale.on('resize', this.resize, this);
+        this.resize({width: this.scale.width, height: this.scale.height});
+    }
+
+    resize(gameSize) {
+        const { width, height } = gameSize;
+
+        this.cameras.main.setSize(width, height);
+        this.sky.setSize(width, height);
+        this.sky.setPosition(width / 2, height / 2);
+
+        this.scoreText.setPosition(16, 16);
+        this.coinText.setPosition(16, 50);
+        this.instructionsText.setPosition(width / 2, height - 20);
+        this.gameOverText.setPosition(width / 2, height / 2);
+        this.winText.setPosition(width / 2, height / 2);
+
+        this.cameras.main.setBounds(0, -9400, width, 10000);
+
     }
 
     createStars() {
@@ -167,9 +263,10 @@ class GameScene extends Phaser.Scene {
         }
 
         this.stars = this.add.group();
-        for (let i = 0; i < 200; i++) {
-            const x = Phaser.Math.Between(0, 800);
-            const y = Phaser.Math.Between(-9400, 600);
+        for (let i = 0; i < 500
+          ; i++) {
+            const x = Phaser.Math.Between(0, this.scale.width);
+            const y = Phaser.Math.Between(-9400, this.scale.height);
             const star = this.stars.create(x, y, 'star');
             star.setAlpha(Phaser.Math.FloatBetween(0.5, 1));
             star.setScale(Phaser.Math.FloatBetween(0.3, 0.7));
@@ -189,8 +286,8 @@ class GameScene extends Phaser.Scene {
         }
 
         for (let i = 0; i < 30; i++) {
-            const x = Phaser.Math.Between(0, 800);
-            const y = Phaser.Math.Between(-3000, 200);
+            const x = Phaser.Math.Between(0, this.scale.width);
+            const y = Phaser.Math.Between(-3000, this.scale.height - 100);
             const cloud = this.clouds.create(x, y, 'cloud');
             cloud.setAlpha(0.6);
             cloud.setScale(Phaser.Math.FloatBetween(0.5, 1.2));
@@ -237,7 +334,7 @@ class GameScene extends Phaser.Scene {
         graphics.destroy();
 
         // Create player sprite
-        this.player = this.physics.add.sprite(400, 468, 'player');
+        this.player = this.physics.add.sprite(this.scale.width / 2, 468, 'player');
         this.player.setBounce(0);
         this.player.setCollideWorldBounds(false);
         this.player.setGravityY(800);
@@ -271,38 +368,62 @@ class GameScene extends Phaser.Scene {
 
     createInitialPlatforms() {
         // Ground platform
-        const ground = this.createPlatform(400, 600, 800, 20, 0x008000);
+        this.createPlatform(this.scale.width / 2, this.scale.height, this.scale.width, 20, 0x00FF00);
+        this.lastPlatformX = this.scale.width / 2;
+        const doubleJumpMaxDistance = 300;
 
-        // Starting platforms
-        let p1 = this.createPlatform(300, 500, 200, 20, 0x8B4513);
-        this.createCoin(p1.x + p1.width / 2, p1.y - 20);
-        let p2 = this.createPlatform(600, 400, 150, 20, 0x8B4513);
-        this.createCoin(p2.x + p2.width / 2, p2.y - 20);
-        this.createPlatform(250, 300, 180, 20, 0x8B4513);
-        let p3 = this.createPlatform(550, 200, 160, 20, 0x8B4513);
-        this.createCoin(p3.x + p3.width / 2, p3.y - 20);
-        this.createPlatform(350, 100, 140, 20, 0x8B4513);
-        let p4 = this.createPlatform(600, 0, 150, 20, 0x8B4513);
-        this.createCoin(p4.x + p4.width / 2, p4.y - 20);
+        const platforms = [
+            { y: 500, width: 400, coins: true, color: 0x00FF00 },
+            { y: 400, width: 150, coins: true },
+            { y: 300, width: 180, coins: false },
+            { y: 200, width: 160, coins: true },
+            { y: 100, width: 140, coins: false },
+            { y: 0, width: 150, coins: true }
+        ];
+
+        platforms.forEach((p, i) => {
+            let x;
+            if (i === 0) {
+                x = this.scale.width / 2 - p.width / 2;
+            } else {
+                const minX = Math.max(100, this.lastPlatformX - doubleJumpMaxDistance);
+                const maxX = Math.min(this.scale.width - 100, this.lastPlatformX + doubleJumpMaxDistance);
+                x = Phaser.Math.Between(minX, maxX);
+            }
+            const platform = this.createPlatform(x, p.y, p.width, 20, p.color || 0x8B4513);
+            if (this.difficulty === 'impossible') {
+                if (i !== 0) { // Don't add spikes to the first platform
+                    const spikeSpacing = platform.width / 4;
+                    for (let j = 0; j < 3; j++) {
+                        const spikeX = platform.x + spikeSpacing * (j + 1);
+                        this.createSpike(spikeX, platform.y - 10, platform);
+                    }
+                }
+            } else if (p.coins) {
+                this.createCoin(platform.x + platform.width / 2, platform.y - 20);
+            }
+            this.lastPlatformX = x;
+        });
 
         // Generate platforms going up
         this.generatePlatformsUp();
     }
 
     createPlatform(x, y, width, height, color) {
-        const graphics = this.add.graphics();
-        graphics.fillStyle(color, 1);
-        graphics.fillRect(0, 0, width, height);
+        const key = 'platform_' + width + '_' + height + '_' + color;
+        if (!this.textures.exists(key)) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(color, 1);
+            graphics.fillRect(0, 0, width, height);
 
-        // Add some detail
-        graphics.lineStyle(2, 0x000000, 0.3);
-        for (let i = 0; i < width; i += 20) {
-            graphics.lineBetween(i, 0, i, height);
+            // Add some detail
+            graphics.lineStyle(2, 0x000000, 0.3);
+            for (let i = 0; i < width; i += 20) {
+                graphics.lineBetween(i, 0, i, height);
+            }
+            graphics.generateTexture(key, width, height);
+            graphics.destroy();
         }
-
-        const key = 'platform_' + Math.random();
-        graphics.generateTexture(key, width, height);
-        graphics.destroy();
 
         const platform = this.platforms.create(x, y, key);
         platform.setOrigin(0, 0);
@@ -311,27 +432,102 @@ class GameScene extends Phaser.Scene {
         return platform;
     }
 
+    createMovingPlatform(x, y, width, height, color) {
+        const key = 'moving_platform_' + width + '_' + height + '_' + color;
+        if (!this.textures.exists(key)) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(color, 1);
+            graphics.fillRect(0, 0, width, height);
+            graphics.generateTexture(key, width, height);
+            graphics.destroy();
+        }
+
+        const platform = this.movingPlatforms.create(x, y, key);
+        platform.setOrigin(0,0);
+        platform.body.velocity.x = Phaser.Math.Between(50, 100) * (Phaser.Math.Between(0, 1) ? 1 : -1);
+        platform.body.setAllowGravity(false);
+        platform.setImmovable(true);
+        platform.refreshBody();
+        return platform;
+    }
+
+    createBouncePad(x, y, width, height, color) {
+        const key = 'bounce_pad_' + width + '_' + height + '_' + color;
+        if (!this.textures.exists(key)) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(color, 1);
+            graphics.fillRect(0, 0, width, height);
+            graphics.generateTexture(key, width, height);
+            graphics.destroy();
+        }
+
+        const bouncePad = this.bouncePads.create(x, y, key);
+        bouncePad.setOrigin(0, 0);
+        bouncePad.refreshBody();
+        return bouncePad;
+    }
+
     generatePlatformsUp() {
         // Generate platforms going up to a score of 1000
         let currentY = -100;
+        const doubleJumpMaxDistance = 300;
 
         // Score of 1000 is at y = 600 - 1000 * 10 = -9400
         while (currentY > -9400) {
-            const x = Phaser.Math.Between(100, 650);
-            const width = Phaser.Math.Between(120, 200);
+            const minX = Math.max(100, this.lastPlatformX - doubleJumpMaxDistance);
+            const maxX = Math.min(this.scale.width - 100, this.lastPlatformX + doubleJumpMaxDistance);
+            const x = Phaser.Math.Between(minX, maxX);
+            let width;
+            if (this.difficulty === 'easy') {
+                width = Phaser.Math.Between(150, 250);
+            } else if (this.difficulty === 'hard') {
+                width = Phaser.Math.Between(80, 150);
+            } else { // normal
+                width = Phaser.Math.Between(120, 200);
+            }
 
-            const platform = this.createPlatform(x, currentY, width, 20, 0x8B4513);
+            const score = Math.max(0, Math.floor((600 - currentY) / 10));
+            let platform;
+            if (score > 250 && Phaser.Math.Between(1, 4) === 1) {
+                platform = this.createBouncePad(x, currentY, width, 20, 0x00BFFF);
+            } else if (score > 500 && Phaser.Math.Between(1, 3) > 1) {
+                platform = this.createMovingPlatform(x, currentY, width, 20, 0xadd8e6);
+            } else {
+                platform = this.createPlatform(x, currentY, width, 20, 0x8B4513);
+            }
+            this.lastPlatformX = x;
 
             // Add a coin or a spike on some platforms
-            const chance = Phaser.Math.Between(1, 5);
-            if (chance === 1) { // 1 in 5 chance for a coin
-                this.createCoin(platform.x + platform.width / 2, platform.y - 20);
-            } else if (chance === 2) { // 1 in 5 chance for a spike
-                this.createSpike(platform.x + platform.width / 2, platform.y - 10);
+            if (this.difficulty === 'impossible') {
+                const spikeSpacing = platform.width / 4;
+                for (let i = 0; i < 3; i++) {
+                    const spikeX = platform.x + spikeSpacing * (i + 1);
+                    this.createSpike(spikeX, platform.y - 10, platform);
+                }
+            } else {
+                let chance;
+                if (this.difficulty === 'easy') {
+                    chance = Phaser.Math.Between(1, 10); // Lower chance of spikes
+                } else if (this.difficulty === 'hard') {
+                    chance = Phaser.Math.Between(1, 3); // Higher chance of spikes
+                } else { // normal
+                    chance = Phaser.Math.Between(1, 5);
+                }
+    
+                if (chance === 1) { // 1 in 5 chance for a coin
+                    this.createCoin(platform.x + platform.width / 2, platform.y - 20);
+                } else if (chance === 2) { // 1 in 5 chance for spikes
+                    const numberOfSpikes = Phaser.Math.Between(1, 3);
+                    const spikeSpacing = platform.width / (numberOfSpikes + 1);
+                    for (let i = 0; i < numberOfSpikes; i++) {
+                        const spikeX = platform.x + spikeSpacing * (i + 1);
+                        this.createSpike(spikeX, platform.y - 10, platform);
+                    }
+                }
             }
 
             // Spacing between platforms
-            currentY -= Phaser.Math.Between(80, 140);
+            currentY -= Phaser.Math.Between(70, 120);
         }
     }
 
@@ -355,7 +551,7 @@ class GameScene extends Phaser.Scene {
         this.coinText.setText('Coins: ' + this.coinsCollected);
     }
 
-    createSpike(x, y) {
+    createSpike(x, y, platform = null) {
         // Create a simple grey triangle for the spike
         if (!this.textures.exists('spike')) {
             const graphics = this.add.graphics();
@@ -373,6 +569,10 @@ class GameScene extends Phaser.Scene {
         const spike = this.spikes.create(x, y, 'spike');
         spike.setImmovable(true);
         spike.body.setSize(16, 16).setOffset(2, 2);
+
+        if (platform && this.movingPlatforms.contains(platform)) {
+            spike.platform = platform;
+        }
     }
 
     hitSpike(player, spike) {
@@ -380,8 +580,21 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        if (this.coinsCollected >= 5) {
-            this.coinsCollected -= 5;
+        if (this.difficulty === 'impossible') {
+            this.triggerGameOver();
+            return;
+        }
+
+        let coinPenalty = 5;
+        if (this.difficulty === 'easy') {
+            coinPenalty = 2;
+        } else if (this.difficulty === 'hard') {
+            coinPenalty = 10;
+        }
+
+
+        if (this.coinsCollected >= coinPenalty) {
+            this.coinsCollected -= coinPenalty;
             this.coinText.setText('Coins: ' + this.coinsCollected);
             this.isInvulnerable = true;
             this.player.setTint(0xff0000);
@@ -395,13 +608,34 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    update() {
+    enableOneWayCollision(platform) {
+        const player = this.player;
+        if (player.body.velocity.y > 0 && player.y < platform.y) {
+            platform.body.checkCollision.up = true;
+        } else {
+            platform.body.checkCollision.up = false;
+        }
+    }
+
+    hitBouncePad(player, pad) {
+        if (player.body.velocity.y >= 0) {
+            player.setVelocityY(-800); // Strong bounce
+            this.jumpCount = 0; // Allow double jump
+        }
+    }
+
+    update(time, delta) {
         if (this.gameOver) {
             if (Phaser.Input.Keyboard.JustDown(this.restartKey)) {
                 this.scene.restart();
             }
             return;
         }
+
+        // One-way collision for all platforms
+        this.platforms.getChildren().forEach(this.enableOneWayCollision, this);
+        this.movingPlatforms.getChildren().forEach(this.enableOneWayCollision, this);
+        this.bouncePads.getChildren().forEach(this.enableOneWayCollision, this);
 
         // Player controls - Mario-style
         const acceleration = 1000;
@@ -440,7 +674,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // Update score based on height reached
-        const height = Math.max(0, Math.floor((600 - this.player.y) / 10));
+        const height = Math.max(0, Math.floor((this.highestPlatform - this.player.y) / 10));
         this.score = Math.max(this.score, height);
         this.scoreText.setText('Height: ' + this.score);
 
@@ -470,22 +704,69 @@ class GameScene extends Phaser.Scene {
 
         // Allow wrapping around screen edges
         if (this.player.x < 0) {
-            this.player.x = 800;
-        } else if (this.player.x > 800) {
+            this.player.x = this.scale.width;
+        } else if (this.player.x > this.scale.width) {
             this.player.x = 0;
         }
+
+        // Make moving platforms wrap
+        this.movingPlatforms.getChildren().forEach(platform => {
+            if (platform.body.velocity.x > 0 && platform.x > this.scale.width) {
+                platform.x = -platform.width;
+            } else if (platform.body.velocity.x < 0 && platform.x < -platform.width) {
+                platform.x = this.scale.width;
+            }
+        });
+
+        // Make spikes stick to moving platforms
+        this.spikes.getChildren().forEach(spike => {
+            if (spike.platform) {
+                spike.x += spike.platform.body.velocity.x * (delta / 1000);
+            }
+        });
 
         // Recycle clouds
         this.clouds.getChildren().forEach(cloud => {
             if (cloud.x < -100) {
-                cloud.x = 900;
-            } else if (cloud.x > 900) {
+                cloud.x = this.scale.width + 100;
+            } else if (cloud.x > this.scale.width + 100) {
                 cloud.x = -100;
             }
         });
     }
 
+    applyCheatCode() {
+        const score = parseInt(this.cheatCode, 10);
+        if (isNaN(score)) {
+            return;
+        }
+
+        const y = 600 - score * 10;
+
+        let closestPlatform = null;
+        let minDistance = Infinity;
+
+        const allPlatforms = this.platforms.getChildren().concat(this.movingPlatforms.getChildren());
+
+        allPlatforms.forEach(platform => {
+            const distance = Math.abs(platform.y - y);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestPlatform = platform;
+            }
+        });
+
+        if (closestPlatform) {
+            this.player.setPosition(closestPlatform.x + closestPlatform.width / 2, closestPlatform.y - 32);
+            this.player.setVelocityY(0);
+        }
+    }
+
     triggerGameOver() {
+        if (this.gameOver) {
+            return;
+        }
+        this.player.setPosition(this.scale.width/2, 468);
         this.gameOver = true;
         this.gameOverText.setVisible(true);
         this.physics.pause();
@@ -495,15 +776,25 @@ class GameScene extends Phaser.Scene {
         this.gameOver = true;
         this.winText.setVisible(true);
         this.physics.pause();
+        if (this.difficulty === 'easy') {
+          localStorage.setItem('normalUnlocked', true)
+        } else if (this.difficulty === 'normal') {
+          localStorage.setItem('hardUnlocked', true)
+        } else if (this.difficulty === 'hard') {
+          localStorage.setItem('impossibleUnlocked', true)
+        }
     }
 }
 
 // Game configuration
 const config = {
     type: Phaser.AUTO,
-    width: 800,
-    height: 600,
-    parent: 'game-container',
+    scale: {
+        mode: Phaser.Scale.RESIZE,
+        parent: 'game-container',
+        width: '100%',
+        height: '100%'
+    },
     physics: {
         default: 'arcade',
         arcade: {
@@ -511,7 +802,7 @@ const config = {
             debug: false
         }
     },
-    scene: [GameScene]
+    scene: [MenuScene, GameScene]
 };
 
 const game = new Phaser.Game(config);
