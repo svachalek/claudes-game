@@ -15,10 +15,18 @@ class GameScene extends Phaser.Scene {
         this.gameOver = false;
         this.jumpCount = 0;
         this.flameEmitter = null;
+        this.isInvulnerable = false;
 
         // Create sky background
         this.sky = this.add.rectangle(400, 300, 800, 600, 0x87ceeb);
         this.sky.setScrollFactor(0);
+
+        // Add stars
+        this.createStars();
+
+        // Add clouds
+        this.clouds = this.physics.add.group();
+        this.createClouds();
 
         // Define sky colors
         this.skyColorStart = Phaser.Display.Color.ValueToColor(0x87ceeb);
@@ -41,22 +49,24 @@ class GameScene extends Phaser.Scene {
         if (!this.textures.exists('flame')) {
             const graphics = this.add.graphics();
             
-            // Create blocky flame shape with multiple colors
-            // Base orange
-            graphics.fillStyle(0xff6600, 1);
-            graphics.fillRect(4, 8, 8, 8);
+            // Create a simple, more pixelated flame
+            graphics.fillStyle(0xff6600, 1); // Orange
+            graphics.fillRect(2, 4, 4, 4);
+            graphics.fillStyle(0xffaa00, 1); // Yellow
+            graphics.fillRect(3, 2, 2, 2);
+
+            graphics.generateTexture('flame', 8, 8);
+            graphics.destroy();
+        }
+
+        // Create smoke texture
+        if (!this.textures.exists('smoke')) {
+            const graphics = this.add.graphics();
             
-            // Middle yellow
-            graphics.fillStyle(0xffaa00, 1);
-            graphics.fillRect(5, 10, 6, 4);
-            graphics.fillRect(6, 8, 4, 2);
-            
-            // Tip white/yellow
-            graphics.fillStyle(0xffff44, 1)
-            graphics.fillRect(6, 6, 4, 2);
-            graphics.fillRect(7, 4, 2, 2);
-            
-            graphics.generateTexture('flame', 16, 16);
+            graphics.fillStyle(0xcccccc, 0.5);
+            graphics.fillCircle(4, 4, 4);
+
+            graphics.generateTexture('smoke', 8, 8);
             graphics.destroy();
         }
 
@@ -72,7 +82,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.player, this.spikes, this.hitSpike, null, this);
 
         // Camera setup
-        this.cameras.main.setBounds(0, -10000, 800, 10600);
+        this.cameras.main.setBounds(0, -9400, 800, 10000);
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setDeadzone(800, 200);
 
@@ -119,8 +129,78 @@ class GameScene extends Phaser.Scene {
         this.gameOverText.setScrollFactor(0);
         this.gameOverText.setVisible(false);
 
+        // Win text (hidden initially)
+        this.winText = this.add.text(400, 300, 'YOU WIN!\nPress R to Restart', {
+            fontSize: '48px',
+            fill: '#00ff00',
+            stroke: '#000',
+            strokeThickness: 6,
+            align: 'center'
+        });
+        this.winText.setOrigin(0.5);
+        this.winText.setScrollFactor(0);
+        this.winText.setVisible(false);
+
         // Restart key
         this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    }
+
+    createStars() {
+        if (!this.textures.exists('star')) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(0xffff00, 1);
+            graphics.beginPath();
+            graphics.moveTo(5, 0);
+            graphics.lineTo(6.18, 3.63);
+            graphics.lineTo(10, 3.63);
+            graphics.lineTo(6.91, 5.88);
+            graphics.lineTo(8.09, 9.51);
+            graphics.lineTo(5, 7.29);
+            graphics.lineTo(1.91, 9.51);
+            graphics.lineTo(3.09, 5.88);
+            graphics.lineTo(0, 3.63);
+            graphics.lineTo(3.82, 3.63);
+            graphics.closePath();
+            graphics.fillPath();
+            graphics.generateTexture('star', 10, 10);
+            graphics.destroy();
+        }
+
+        this.stars = this.add.group();
+        for (let i = 0; i < 200; i++) {
+            const x = Phaser.Math.Between(0, 800);
+            const y = Phaser.Math.Between(-9400, 600);
+            const star = this.stars.create(x, y, 'star');
+            star.setAlpha(Phaser.Math.FloatBetween(0.5, 1));
+            star.setScale(Phaser.Math.FloatBetween(0.3, 0.7));
+            star.setScrollFactor(Phaser.Math.FloatBetween(0.1, 0.5));
+        }
+    }
+
+    createClouds() {
+        if (!this.textures.exists('cloud')) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(0xffffff, 0.8);
+            graphics.fillEllipse(50, 50, 100, 60);
+            graphics.fillEllipse(100, 50, 80, 50);
+            graphics.fillEllipse(20, 50, 60, 40);
+            graphics.generateTexture('cloud', 150, 100);
+            graphics.destroy();
+        }
+
+        for (let i = 0; i < 30; i++) {
+            const x = Phaser.Math.Between(0, 800);
+            const y = Phaser.Math.Between(-3000, 200);
+            const cloud = this.clouds.create(x, y, 'cloud');
+            cloud.setAlpha(0.6);
+            cloud.setScale(Phaser.Math.FloatBetween(0.5, 1.2));
+            cloud.setOrigin(0.5, 0.5);
+
+            // Assign a random velocity to each cloud
+            const velocityX = Phaser.Math.Between(-20, 20);
+            cloud.body.setAllowGravity(false);
+            cloud.body.setVelocityX(velocityX);
+        }
     }
 
     createPlayer() {
@@ -167,13 +247,24 @@ class GameScene extends Phaser.Scene {
         this.player.body.setDragX(400);
         this.player.body.setMaxVelocityX(200);
 
+        // Create smoke particles
+        this.smokeEmitter = this.add.particles(0, 0, 'smoke', {
+            speed: { min: 20, max: 40 },
+            angle: { min: 20, max: 160 },
+            scale: { start: 1, end: 4 },
+            alpha: { start: 0.6, end: 0 },
+            blendMode: 'NORMAL',
+            lifespan: 1500,
+            emitting: false
+        });
+
         // Create flame particles
         this.flameEmitter = this.add.particles(0, 0, 'flame', {
-            speed: { min: 50, max: 100 },
-            angle: { min: 80, max: 100 },
-            scale: { start: 1.5, end: 0 },
-            blendMode: 'ADD',
-            lifespan: 600,
+            speed: { min: 20, max: 50 },
+            angle: { min: 60, max: 120 },
+            scale: { start: 2, end: 2 }, // Larger, constant scale
+            blendMode: 'NORMAL',         // No additive blending
+            lifespan: 700,
             emitting: false
         });
     }
@@ -221,10 +312,11 @@ class GameScene extends Phaser.Scene {
     }
 
     generatePlatformsUp() {
-        // Generate platforms going up to -10000
+        // Generate platforms going up to a score of 1000
         let currentY = -100;
 
-        while (currentY > -10000) {
+        // Score of 1000 is at y = 600 - 1000 * 10 = -9400
+        while (currentY > -9400) {
             const x = Phaser.Math.Between(100, 650);
             const width = Phaser.Math.Between(120, 200);
 
@@ -284,7 +376,23 @@ class GameScene extends Phaser.Scene {
     }
 
     hitSpike(player, spike) {
-        this.triggerGameOver();
+        if (this.isInvulnerable) {
+            return;
+        }
+
+        if (this.coinsCollected >= 5) {
+            this.coinsCollected -= 5;
+            this.coinText.setText('Coins: ' + this.coinsCollected);
+            this.isInvulnerable = true;
+            this.player.setTint(0xff0000);
+
+            this.time.delayedCall(2000, () => {
+                this.isInvulnerable = false;
+                this.player.clearTint();
+            });
+        } else {
+            this.triggerGameOver();
+        }
     }
 
     update() {
@@ -321,11 +429,13 @@ class GameScene extends Phaser.Scene {
                 this.player.setVelocityY(-400);
                 this.jumpCount = 1;
                 this.flameEmitter.emitParticleAt(this.player.x, this.player.y + 16, 16);
+                this.smokeEmitter.emitParticleAt(this.player.x, this.player.y + 24, 12);
             } else if (this.jumpCount < 2) {
                 // Second jump
                 this.player.setVelocityY(-400);
                 this.jumpCount++;
                 this.flameEmitter.emitParticleAt(this.player.x, this.player.y + 16, 16);
+                this.smokeEmitter.emitParticleAt(this.player.x, this.player.y + 24, 12);
             }
         }
 
@@ -334,12 +444,24 @@ class GameScene extends Phaser.Scene {
         this.score = Math.max(this.score, height);
         this.scoreText.setText('Height: ' + this.score);
 
+        // Check for win condition
+        if (this.score >= 1000) {
+            this.triggerWin();
+        }
+
         // Update sky color based on height
         const transitionStartHeight = 600;
         const transitionEndHeight = -5000;
         const transitionProgress = Phaser.Math.Clamp((transitionStartHeight - this.player.y) / (transitionStartHeight - transitionEndHeight), 0, 1);
         const interpolatedColor = Phaser.Display.Color.Interpolate.ColorWithColor(this.skyColorStart, this.skyColorEnd, 100, transitionProgress * 100);
         this.sky.fillColor = Phaser.Display.Color.GetColor(interpolatedColor.r, interpolatedColor.g, interpolatedColor.b);
+
+        // Update star and cloud visibility
+        this.stars.setAlpha(transitionProgress);
+        this.clouds.getChildren().forEach(cloud => {
+            cloud.setAlpha(0.6 * (1 - transitionProgress));
+        });
+
 
         // Check if player fell off the bottom
         if (this.player.y > 700) {
@@ -352,11 +474,26 @@ class GameScene extends Phaser.Scene {
         } else if (this.player.x > 800) {
             this.player.x = 0;
         }
+
+        // Recycle clouds
+        this.clouds.getChildren().forEach(cloud => {
+            if (cloud.x < -100) {
+                cloud.x = 900;
+            } else if (cloud.x > 900) {
+                cloud.x = -100;
+            }
+        });
     }
 
     triggerGameOver() {
         this.gameOver = true;
         this.gameOverText.setVisible(true);
+        this.physics.pause();
+    }
+
+    triggerWin() {
+        this.gameOver = true;
+        this.winText.setVisible(true);
         this.physics.pause();
     }
 }
